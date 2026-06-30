@@ -16,7 +16,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import com.google.zxing.BarcodeFormat
 import com.google.zxing.BinaryBitmap
+import com.google.zxing.DecodeHintType
 import com.google.zxing.MultiFormatReader
 import com.google.zxing.NotFoundException
 import com.google.zxing.PlanarYUVLuminanceSource
@@ -35,7 +37,24 @@ fun BarcodeScannerView(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val reader = remember { MultiFormatReader() }
+    val reader = remember {
+        MultiFormatReader().apply {
+            setHints(
+                mapOf(
+                    DecodeHintType.POSSIBLE_FORMATS to listOf(
+                        BarcodeFormat.EAN_13,
+                        BarcodeFormat.EAN_8,
+                        BarcodeFormat.UPC_A,
+                        BarcodeFormat.UPC_E,
+                        BarcodeFormat.CODE_128,
+                        BarcodeFormat.CODE_39,
+                        BarcodeFormat.QR_CODE
+                    ),
+                    DecodeHintType.TRY_HARDER to true
+                )
+            )
+        }
+    }
     val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
     val lastDetectedValue = remember { mutableStateOf<String?>(null) }
 
@@ -59,23 +78,42 @@ fun BarcodeScannerView(
 
                 imageAnalysis.setAnalyzer(analysisExecutor) { imageProxy ->
                     try {
-                        val buffer = imageProxy.planes[0].buffer
-                        val bytes = ByteArray(buffer.remaining())
-                        buffer.get(bytes)
+                        val plane = imageProxy.planes[0]
+                        val buffer = plane.buffer
+                        val rowStride = plane.rowStride
+                        val width = imageProxy.width
+                        val height = imageProxy.height
+
+                        val bytes: ByteArray
+                        if (rowStride == width) {
+                            // No padding, can copy directly.
+                            bytes = ByteArray(buffer.remaining())
+                            buffer.get(bytes)
+                        } else {
+                            // Row stride has padding beyond actual width; strip it out
+                            // row by row so ZXing gets a tightly packed luminance buffer.
+                            bytes = ByteArray(width * height)
+                            val rowBytes = ByteArray(rowStride)
+                            for (row in 0 until height) {
+                                buffer.position(row * rowStride)
+                                buffer.get(rowBytes, 0, minOf(rowStride, buffer.remaining()))
+                                System.arraycopy(rowBytes, 0, bytes, row * width, width)
+                            }
+                        }
 
                         val source = PlanarYUVLuminanceSource(
                             bytes,
-                            imageProxy.width,
-                            imageProxy.height,
+                            width,
+                            height,
                             0, 0,
-                            imageProxy.width,
-                            imageProxy.height,
+                            width,
+                            height,
                             false
                         )
                         val bitmap = BinaryBitmap(HybridBinarizer(source))
 
                         try {
-                            val result = reader.decodeWithState(bitmap)
+                            val result = reader.decode(bitmap)
                             val text = result.text
                             if (text != null && text != lastDetectedValue.value) {
                                 lastDetectedValue.value = text
@@ -86,6 +124,8 @@ fun BarcodeScannerView(
                         } finally {
                             reader.reset()
                         }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
                     } finally {
                         imageProxy.close()
                     }
