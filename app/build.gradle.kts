@@ -62,6 +62,7 @@ dependencies {
 
     // ZXing barcode scanning
     implementation("com.google.zxing:core:3.5.2")
+    implementation("com.google.mlkit:barcode-scanning:17.2.0")
 
     // SQLite (embedded asset DB, raw access)
     implementation("androidx.sqlite:sqlite-ktx:2.4.0")
