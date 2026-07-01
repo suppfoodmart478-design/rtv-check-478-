@@ -7,7 +7,7 @@ import java.io.File
 import java.io.FileOutputStream
 
 private const val DB_NAME = "items.db"
-private const val DB_VERSION = 1
+private const val DB_VERSION = 2
 
 class ItemDatabaseHelper(private val context: Context) :
     SQLiteOpenHelper(context, DB_NAME, null, DB_VERSION) {
